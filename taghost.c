@@ -20,6 +20,7 @@
 #include <ncurses.h>
 
 #define PORT "3490"
+#define MAXDATASIZE 50 // max number of bytes we can get at once
 #define ROWS 20
 #define COLS 30
 
@@ -115,88 +116,118 @@ void printBoard(int p1r, int p1c, int p2r, int p2c){
     refresh();
 }
 
-int main(int argc, char* argv[]){
+int main(int argc, char* argv[]) {
     struct sockaddr_storage their_addr;
     socklen_t sin_size;
-    int new_fd;
+    int newfd, numbytes;
     char s[INET6_ADDRSTRLEN]; // connections address
+    fd_set readfds;
+    struct timeval tv;
+
     u_int32_t p1buf[2];
+    u_int32_t p2buf[MAXDATASIZE];
     u_int32_t p1r = 1;
     u_int32_t p1c = 1;
     int direction;
 
     char hostname[20];
-    if(gethostname(hostname, sizeof(hostname)) == 0){
+    if (gethostname(hostname, sizeof(hostname)) == 0) {
         printf("Hostname: %s\n", hostname);
     }
 
     int listener = getListener();
-    if(listener == -1){
+    if (listener == -1) {
         printf("listener descriptor failed: %d", listener);
     }
 
     struct sigaction sa;
-    sa.sa_handler = sigchld_handler; // reap all daad processes when receive SIGCHLD (a child terminated)
-    sigemptyset(&sa.sa_mask); // "don't block anything extra during this handler, let those other signals thru"
-    sa.sa_flags = SA_RESTART; // restart a system call if interupted by this signal
-    if (sigaction(SIGCHLD, &sa, NULL) == -1){
+    sa.sa_handler = sigchld_handler;   // reap all daad processes when receive SIGCHLD (a child terminated)
+    sigemptyset(&sa.sa_mask);          // "don't block anything extra during this handler, let those other signals thru"
+    sa.sa_flags = SA_RESTART;          // restart a system call if interupted by this signal
+    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
         perror("sigaction");
         exit(1);
     }
 
     printf("server: waiting for connections...\n");
 
-    while(1){
+    while (1) {
         sin_size = sizeof their_addr;
-        new_fd = accept(listener, (struct sockaddr *)&their_addr, &sin_size);
-        if(new_fd == -1){
+        newfd = accept(listener, (struct sockaddr *)&their_addr, &sin_size);
+        if (newfd == -1) {
             perror("accept");
             continue;
         }
 
-        inet_ntop(their_addr.ss_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
+        inet_ntop(their_addr.ss_family,
+                  get_in_addr((struct sockaddr *)&their_addr),
+                  s, sizeof s);
         printf("server: got connection from %s\n", s);
 
-        if(fork() == 0){ // child process
-            printf("network p1buf: %d, %d\n", p1buf[0], p1buf[1]);
+        if (fork() == 0) { // child process
+            initscr();              // start ncurses
+            cbreak();               // disable line buffering
+            noecho();               // dont echo input
+            keypad(stdscr, TRUE);   // enable arrow keys
+            nodelay(stdscr, TRUE); 
 
             p1buf[0] = htonl(p1r);
             p1buf[1] = htonl(p1c);
 
-
-            initscr();            // start ncurses
-            cbreak();             // disable line buffering
-            noecho();             // dont echo input
-            keypad(stdscr, TRUE); // enable arrow keys
-            
-            if(send(new_fd, p1buf, sizeof p1buf, 0) == -1){
+            if (send(newfd, p1buf, sizeof p1buf, 0) == -1) {
                 perror("send");
             }
-            printBoard(p1r, p1c, 10, 10);
-            
-            while((direction = getch()) != 'q'){
-                
 
-                if(direction == KEY_UP && p1r-1 > 1){
+            if ((numbytes = recv(newfd, p2buf, MAXDATASIZE-1, 0)) == -1) {
+                perror("recv");
+                exit(1);
+            }
+
+            printBoard(p1r, p1c, ntohl(p2buf[0]), ntohl(p2buf[1]));
+
+            while (1) {
+                direction = getch();
+                if (direction == KEY_UP && p1r-1 > 1) {
                     p1r -= 1;
-                }else if(direction == KEY_DOWN && p1r+1 < COLS-2){
+                } else if (direction == KEY_DOWN && p1r+1 < ROWS-2) {
                     p1r += 1;
-                }else if(direction == KEY_LEFT && p1c-1 > 1){
+                } else if (direction == KEY_LEFT && p1c-1 > 1) {
                     p1c -= 1;
-                }else if(direction == KEY_RIGHT && p1c+1 < ROWS-2){
+                } else if (direction == KEY_RIGHT && p1c+1 < COLS-2) {
                     p1c += 1;
                 }
 
                 p1buf[0] = htonl(p1r);
                 p1buf[1] = htonl(p1c);
 
-                if(send(new_fd, p1buf, sizeof p1buf, 0) == -1){
+                if (send(newfd, p1buf, sizeof p1buf, 0) == -1) {
                     perror("send");
+                    break;
                 }
 
-                printBoard(p1r, p1c, 10, 10);
+                FD_ZERO(&readfds);
+                FD_SET(newfd, &readfds);
+                tv.tv_sec = 0;
+                tv.tv_usec = 10000;
+
+                int rv = select(newfd+1, &readfds, NULL, NULL, &tv);
+                if (rv == -1) {
+                    perror("select");
+                    break;
+                } else if (rv > 0 && FD_ISSET(newfd, &readfds)) {
+                    if ((numbytes = recv(newfd, p2buf, sizeof(p2buf), 0)) <= 0) {
+                        if (numbytes == 0) {
+                            mvprintw(ROWS/2, COLS/2-5, "Server disconnected");
+                        } else {
+                            perror("recv");
+                        }
+                        break;
+                    }
+                }
+
+                printBoard(p1r, p1c, ntohl(p2buf[0]), ntohl(p2buf[1]));
             }
-            endwin(); //end ncurses
+            endwin(); // end ncurses
         }
     }
     return 0;

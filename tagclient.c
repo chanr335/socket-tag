@@ -130,6 +130,8 @@ int main(int argc, char *argv[]){
     printf("p1buf: %d, %d\n", ntohl(p1buf[0]), ntohl(p1buf[1]));
     printBoard(ntohl(p1buf[0]), ntohl(p1buf[1]), p2r, p2c);
 
+    p2buf[0] = htonl(p2r);
+    p2buf[1] = htonl(p2c);
     if(send(sockfd, p2buf, sizeof p2buf, 0) == -1){
         perror("send");
     }
@@ -148,7 +150,6 @@ int main(int argc, char *argv[]){
 
         p2buf[0] = htonl(p2r);
         p2buf[1] = htonl(p2c);
-
         if(send(sockfd, p2buf, sizeof p2buf, 0) == -1){
             perror("send");
             break;
