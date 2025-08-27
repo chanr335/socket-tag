@@ -7,7 +7,6 @@
 #include <string.h>
 #include <errno.h>
 
-#include <sys/_types/_u_int32_t.h>
 #include <unistd.h>
 #include <sys/types.h>
 
@@ -17,6 +16,8 @@
 #include <arpa/inet.h>
 
 #include <signal.h>
+
+#include <ncurses.h>
 
 #define PORT "3490"
 #define ROWS 20
@@ -97,25 +98,32 @@ int getListener(void){
 }
 
 void printBoard(int p1r, int p1c, int p2r, int p2c){
-    int matrix[ROWS][COLS];
-    
+    clear();
     for(int r = 0; r < ROWS; r++){
         for(int c = 0; c < COLS; c++){
             if(r == 0 || r == ROWS -1 || c == 0 || c == COLS - 1){
-                printf("#");
+                mvprintw(r, c, "#");
             } else if(r == p1r && c == p1c){
-                printf("1");
+                mvprintw(r, c, "1");
             } else if(r == p2r && c == p2c){
-                printf("2");
+                mvprintw(r, c, "2");
             } else{
-                printf(" ");
+                mvprintw(r, c, " ");
             }
         }
-        printf("\n");
     }
+    refresh();
 }
 
 int main(int argc, char* argv[]){
+    struct sockaddr_storage their_addr;
+    socklen_t sin_size;
+    int new_fd;
+    char s[INET6_ADDRSTRLEN]; // connections address
+    u_int32_t p1buf[2];
+    u_int32_t p1r = 1;
+    u_int32_t p1c = 1;
+    int direction;
 
     char hostname[20];
     if(gethostname(hostname, sizeof(hostname)) == 0){
@@ -136,15 +144,6 @@ int main(int argc, char* argv[]){
         exit(1);
     }
 
-    struct sockaddr_storage their_addr;
-    socklen_t sin_size;
-    int new_fd;
-    char s[INET6_ADDRSTRLEN]; // connections address
-    u_int32_t p1buf[2];
-    u_int32_t p1r = 1;
-    u_int32_t p1c = 1;
-
-
     printf("server: waiting for connections...\n");
 
     while(1){
@@ -159,19 +158,45 @@ int main(int argc, char* argv[]){
         printf("server: got connection from %s\n", s);
 
         if(fork() == 0){ // child process
-            p1buf[0] = p1r;
-            p1buf[1] = p1c;
-
             printf("network p1buf: %d, %d\n", p1buf[0], p1buf[1]);
-            printBoard(p1buf[0], p1buf[1], 10, 10);
 
             p1buf[0] = htonl(p1r);
             p1buf[1] = htonl(p1c);
+
+
+            initscr();            // start ncurses
+            cbreak();             // disable line buffering
+            noecho();             // dont echo input
+            keypad(stdscr, TRUE); // enable arrow keys
+            
             if(send(new_fd, p1buf, sizeof p1buf, 0) == -1){
                 perror("send");
             }
+            printBoard(p1r, p1c, 10, 10);
+            
+            while((direction = getch()) != 'q'){
+                if(direction == KEY_UP && p1r-1 > 1){
+                    p1r -= 1;
+                }else if(direction == KEY_DOWN && p1r+1 < COLS-2){
+                    p1r += 1;
+                }else if(direction == KEY_LEFT && p1c-1 > 1){
+                    p1c -= 1;
+                }else if(direction == KEY_RIGHT && p1c+1 < ROWS-2){
+                    p1c += 1;
+                }
+
+                p1buf[0] = htonl(p1r);
+                p1buf[1] = htonl(p1c);
+
+                if(send(new_fd, p1buf, sizeof p1buf, 0) == -1){
+                    perror("send");
+                }
+
+                printBoard(p1r, p1c, 10, 10);
+                refresh();
+            }
+            endwin();             // end ncurses mode
         }
     }
-
     return 0;
 }

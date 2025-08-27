@@ -14,6 +14,8 @@
 
 #include <arpa/inet.h>
 
+#include <ncurses.h>
+
 #define PORT "3490" // the port client will be connecting to
 #define ROWS 20
 #define COLS 30
@@ -29,26 +31,22 @@ void *get_in_addr(struct sockaddr *sa){
 }
 
 void printBoard(int p1r, int p1c, int p2r, int p2c){
-    int matrix[ROWS][COLS];
-
-    printf("printboard: %d, %d, %d, %d\n", p1r, p1c, p2r, p2c);
-    
+    clear();
     for(int r = 0; r < ROWS; r++){
         for(int c = 0; c < COLS; c++){
             if(r == 0 || r == ROWS -1 || c == 0 || c == COLS - 1){
-                printf("#");
+                mvprintw(r, c, "#");
             } else if(r == p1r && c == p1c){
-                printf("1");
+                mvprintw(r, c, "1");
             } else if(r == p2r && c == p2c){
-                printf("2");
+                mvprintw(r, c, "2");
             } else{
-                printf(" ");
+                mvprintw(r, c, " ");
             }
         }
-        printf("\n");
     }
+    refresh();
 }
-
 int main(int argc, char *argv[]){
     int sockfd, numbytes;
     u_int32_t p1buf[MAXDATASIZE];
@@ -99,16 +97,22 @@ int main(int argc, char *argv[]){
 
     freeaddrinfo(servinfo);
 
+
+    initscr();            // start ncurses
+    cbreak();             // disable line buffering
+    noecho();             // don't echo input
+    keypad(stdscr, TRUE); // enable arrow keys
+
+
     while(1){
         if ((numbytes = recv(sockfd, p1buf, MAXDATASIZE-1, 0)) == -1){
             perror("recv");
             exit(1);
         }
 
-        // p1buf[numbytes] = '\0';
         printf("p1buf: %d, %d\n", ntohl(p1buf[0]), ntohl(p1buf[1]));
         printBoard(ntohl(p1buf[0]), ntohl(p1buf[1]), 10, 10);
-        // close(sockfd);
     }
+    endwin();
     return 0;
 }
