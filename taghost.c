@@ -7,6 +7,7 @@
 #include <string.h>
 #include <errno.h>
 
+#include <sys/_types/_u_int32_t.h>
 #include <unistd.h>
 #include <sys/types.h>
 
@@ -95,7 +96,7 @@ int getListener(void){
     return sockfd;
 }
 
-void printBoard(int p1r, int p1c){
+void printBoard(int p1r, int p1c, int p2r, int p2c){
     int matrix[ROWS][COLS];
     
     for(int r = 0; r < ROWS; r++){
@@ -104,6 +105,8 @@ void printBoard(int p1r, int p1c){
                 printf("#");
             } else if(r == p1r && c == p1c){
                 printf("1");
+            } else if(r == p2r && c == p2c){
+                printf("2");
             } else{
                 printf(" ");
             }
@@ -137,6 +140,10 @@ int main(int argc, char* argv[]){
     socklen_t sin_size;
     int new_fd;
     char s[INET6_ADDRSTRLEN]; // connections address
+    u_int32_t p1buf[2];
+    u_int32_t p1r = 1;
+    u_int32_t p1c = 1;
+
 
     printf("server: waiting for connections...\n");
 
@@ -151,9 +158,18 @@ int main(int argc, char* argv[]){
         inet_ntop(their_addr.ss_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
         printf("server: got connection from %s\n", s);
 
-        if(!fork()){ // child process
-            printBoard(1, 1);
-            printf("child found");
+        if(fork() == 0){ // child process
+            p1buf[0] = p1r;
+            p1buf[1] = p1c;
+
+            printf("network p1buf: %d, %d\n", p1buf[0], p1buf[1]);
+            printBoard(p1buf[0], p1buf[1], 10, 10);
+
+            p1buf[0] = htonl(p1r);
+            p1buf[1] = htonl(p1c);
+            if(send(new_fd, p1buf, sizeof p1buf, 0) == -1){
+                perror("send");
+            }
         }
     }
 

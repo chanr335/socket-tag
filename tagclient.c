@@ -15,8 +15,10 @@
 #include <arpa/inet.h>
 
 #define PORT "3490" // the port client will be connecting to
+#define ROWS 20
+#define COLS 30
 
-#define MAXDATASIZE 100 // max number of bytes we can get at once
+#define MAXDATASIZE 50 // max number of bytes we can get at once
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa){
@@ -26,9 +28,30 @@ void *get_in_addr(struct sockaddr *sa){
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
+void printBoard(int p1r, int p1c, int p2r, int p2c){
+    int matrix[ROWS][COLS];
+
+    printf("printboard: %d, %d, %d, %d\n", p1r, p1c, p2r, p2c);
+    
+    for(int r = 0; r < ROWS; r++){
+        for(int c = 0; c < COLS; c++){
+            if(r == 0 || r == ROWS -1 || c == 0 || c == COLS - 1){
+                printf("#");
+            } else if(r == p1r && c == p1c){
+                printf("1");
+            } else if(r == p2r && c == p2c){
+                printf("2");
+            } else{
+                printf(" ");
+            }
+        }
+        printf("\n");
+    }
+}
+
 int main(int argc, char *argv[]){
     int sockfd, numbytes;
-    char buf[MAXDATASIZE];
+    u_int32_t p1buf[MAXDATASIZE];
     struct addrinfo hints, *servinfo, *p;
     int rv;
     char s[INET6_ADDRSTRLEN];
@@ -77,14 +100,15 @@ int main(int argc, char *argv[]){
     freeaddrinfo(servinfo);
 
     while(1){
-        if ((numbytes = recv(sockfd, buf, MAXDATASIZE-1, 0)) == -1){
+        if ((numbytes = recv(sockfd, p1buf, MAXDATASIZE-1, 0)) == -1){
             perror("recv");
             exit(1);
         }
 
-        buf[numbytes] = '\0';
-        printf("client: received '%s'\n", buf);
-        close(sockfd);
+        // p1buf[numbytes] = '\0';
+        printf("p1buf: %d, %d\n", ntohl(p1buf[0]), ntohl(p1buf[1]));
+        printBoard(ntohl(p1buf[0]), ntohl(p1buf[1]), 10, 10);
+        // close(sockfd);
     }
     return 0;
 }
