@@ -175,6 +175,8 @@ int main(int argc, char* argv[]){
             printBoard(p1r, p1c, 10, 10);
             
             while((direction = getch()) != 'q'){
+                
+
                 if(direction == KEY_UP && p1r-1 > 1){
                     p1r -= 1;
                 }else if(direction == KEY_DOWN && p1r+1 < COLS-2){
@@ -193,9 +195,8 @@ int main(int argc, char* argv[]){
                 }
 
                 printBoard(p1r, p1c, 10, 10);
-                refresh();
             }
-            endwin();             // end ncurses mode
+            endwin(); //end ncurses
         }
     }
     return 0;

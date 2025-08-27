@@ -2,16 +2,18 @@
 ** tagclient.c 
 */
 
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
 #include <string.h>
-#include <netdb.h>
+#include <errno.h>
+
+#include <unistd.h>
 #include <sys/types.h>
+
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-
 #include <arpa/inet.h>
 
 #include <ncurses.h>
@@ -30,40 +32,17 @@ void *get_in_addr(struct sockaddr *sa){
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
-void printBoard(int p1r, int p1c, int p2r, int p2c){
-    clear();
-    for(int r = 0; r < ROWS; r++){
-        for(int c = 0; c < COLS; c++){
-            if(r == 0 || r == ROWS -1 || c == 0 || c == COLS - 1){
-                mvprintw(r, c, "#");
-            } else if(r == p1r && c == p1c){
-                mvprintw(r, c, "1");
-            } else if(r == p2r && c == p2c){
-                mvprintw(r, c, "2");
-            } else{
-                mvprintw(r, c, " ");
-            }
-        }
-    }
-    refresh();
-}
-int main(int argc, char *argv[]){
-    int sockfd, numbytes;
-    u_int32_t p1buf[MAXDATASIZE];
+int findListener(char *hostname){
+    int sockfd;
     struct addrinfo hints, *servinfo, *p;
     int rv;
     char s[INET6_ADDRSTRLEN];
-
-    if(argc != 2){
-        fprintf(stderr, "usage: client hostname\n");
-        exit(1);
-    }
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    if ((rv = getaddrinfo(argv[1], PORT, &hints, &servinfo)) != 0){
+    if ((rv = getaddrinfo(hostname, PORT, &hints, &servinfo)) != 0){
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }
@@ -97,21 +76,106 @@ int main(int argc, char *argv[]){
 
     freeaddrinfo(servinfo);
 
+    return sockfd;
+}
+
+void printBoard(int p1r, int p1c, int p2r, int p2c){
+    clear();
+    for(int r = 0; r < ROWS; r++){
+        for(int c = 0; c < COLS; c++){
+            if(r == 0 || r == ROWS -1 || c == 0 || c == COLS - 1){
+                mvprintw(r, c, "#");
+            } else if(r == p1r && c == p1c){
+                mvprintw(r, c, "1");
+            } else if(r == p2r && c == p2c){
+                mvprintw(r, c, "2");
+            } else{
+                mvprintw(r, c, " ");
+            }
+        }
+    }
+    refresh();
+}
+int main(int argc, char *argv[]){
+    fd_set readfds;
+    struct timeval tv;
+    int numbytes;
+    u_int32_t p1buf[MAXDATASIZE];
+    u_int32_t p2buf[2];
+    int direction;
+    int p2r = 10;
+    int p2c = 10;
+
+    if(argc != 2){
+        fprintf(stderr, "usage: client hostname\n");
+        exit(1);
+    }
+
+    int sockfd = findListener(argv[1]);
+    if(sockfd == -1){
+        printf("finding listener descriptor failed: %d", sockfd);
+    }
 
     initscr();            // start ncurses
     cbreak();             // disable line buffering
     noecho();             // don't echo input
     keypad(stdscr, TRUE); // enable arrow keys
+    nodelay(stdscr, TRUE);  // make getch() non-blocking
 
+    if ((numbytes = recv(sockfd, p1buf, MAXDATASIZE-1, 0)) == -1){
+        perror("recv");
+        exit(1);
+    }
+
+    printf("p1buf: %d, %d\n", ntohl(p1buf[0]), ntohl(p1buf[1]));
+    printBoard(ntohl(p1buf[0]), ntohl(p1buf[1]), p2r, p2c);
+
+    if(send(sockfd, p2buf, sizeof p2buf, 0) == -1){
+        perror("send");
+    }
 
     while(1){
-        if ((numbytes = recv(sockfd, p1buf, MAXDATASIZE-1, 0)) == -1){
-            perror("recv");
-            exit(1);
+        direction = getch();
+        if(direction == KEY_UP && p2r-1 > 1){
+            p2r -= 1;
+        }else if(direction == KEY_DOWN && p2r+1 < ROWS-2){
+            p2r += 1;
+        }else if(direction == KEY_LEFT && p2c-1 > 1){
+            p2c -= 1;
+        }else if(direction == KEY_RIGHT && p2c+1 < COLS-2){
+            p2c += 1;
         }
 
-        printf("p1buf: %d, %d\n", ntohl(p1buf[0]), ntohl(p1buf[1]));
-        printBoard(ntohl(p1buf[0]), ntohl(p1buf[1]), 10, 10);
+        p2buf[0] = htonl(p2r);
+        p2buf[1] = htonl(p2c);
+
+        if(send(sockfd, p2buf, sizeof p2buf, 0) == -1){
+            perror("send");
+            break;
+        }
+
+        FD_ZERO(&readfds);
+        FD_SET(sockfd, &readfds);
+
+        tv.tv_sec = 0;
+        tv.tv_usec = 10000;
+
+        int rv = select(sockfd+1, &readfds, NULL, NULL, &tv);
+        if (rv == -1) {
+            perror("select");
+            break;
+        } else if (rv > 0 && FD_ISSET(sockfd, &readfds)) {
+            if ((numbytes = recv(sockfd, p1buf, sizeof(p1buf), 0)) <= 0) {
+                if (numbytes == 0) {
+                    mvprintw(ROWS/2, COLS/2-5, "Server disconnected");
+                } else {
+                    perror("recv");
+                }
+                break;
+            }
+        }
+
+        printBoard(ntohl(p1buf[0]), ntohl(p1buf[1]), p2r, p2c);
     }
     endwin();
     return 0;
