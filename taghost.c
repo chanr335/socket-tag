@@ -19,10 +19,12 @@
 
 #include <ncurses.h>
 
+#include <time.h>
+
 #define PORT "3490"
 #define MAXDATASIZE 50 // max number of bytes we can get at once
 #define ROWS 20
-#define COLS 30
+#define COLS 50
 
 /*
 * keeps errno consistent while reaping children w/o any blocking to avoid zombies
@@ -98,8 +100,9 @@ int getListener(void){
     return sockfd;
 }
 
-void printBoard(int p1r, int p1c, int p2r, int p2c){
+void printBoard(int p1r, int p1c, int p2r, int p2c, int time){
     clear();
+    mvprintw(ROWS, 0, "time elapsed: %d", time);
     for(int r = 0; r < ROWS; r++){
         for(int c = 0; c < COLS; c++){
             if(r == 0 || r == ROWS -1 || c == 0 || c == COLS - 1){
@@ -129,6 +132,7 @@ int main(int argc, char* argv[]) {
     u_int32_t p1r = 1;
     u_int32_t p1c = 1;
     int direction;
+    int score;
 
     char hostname[20];
     if (gethostname(hostname, sizeof(hostname)) == 0) {
@@ -165,6 +169,7 @@ int main(int argc, char* argv[]) {
         printf("server: got connection from %s\n", s);
 
         if (fork() == 0) { // child process
+            time_t start_time = time(NULL);
             initscr();              // start ncurses
             cbreak();               // disable line buffering
             noecho();               // dont echo input
@@ -183,17 +188,17 @@ int main(int argc, char* argv[]) {
                 exit(1);
             }
 
-            printBoard(p1r, p1c, ntohl(p2buf[0]), ntohl(p2buf[1]));
+            printBoard(p1r, p1c, ntohl(p2buf[0]), ntohl(p2buf[1]), 0);
 
             while (1) {
                 direction = getch();
-                if (direction == KEY_UP && p1r-1 > 1) {
+                if (direction == KEY_UP && p1r-1 > 0) {
                     p1r -= 1;
-                } else if (direction == KEY_DOWN && p1r+1 < ROWS-2) {
+                } else if (direction == KEY_DOWN && p1r+1 < ROWS-1) {
                     p1r += 1;
-                } else if (direction == KEY_LEFT && p1c-1 > 1) {
+                } else if (direction == KEY_LEFT && p1c-1 > 0) {
                     p1c -= 1;
-                } else if (direction == KEY_RIGHT && p1c+1 < COLS-2) {
+                } else if (direction == KEY_RIGHT && p1c+1 < COLS-1) {
                     p1c += 1;
                 }
 
@@ -217,7 +222,7 @@ int main(int argc, char* argv[]) {
                 } else if (rv > 0 && FD_ISSET(newfd, &readfds)) {
                     if ((numbytes = recv(newfd, p2buf, sizeof(p2buf), 0)) <= 0) {
                         if (numbytes == 0) {
-                            mvprintw(ROWS/2, COLS/2-5, "Server disconnected");
+                            mvprintw(ROWS/2, COLS/2-5, "Client disconnected");
                         } else {
                             perror("recv");
                         }
@@ -225,10 +230,23 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                printBoard(p1r, p1c, ntohl(p2buf[0]), ntohl(p2buf[1]));
+                time_t now = time(NULL);
+                int elapsed = (int) difftime(now, start_time);
+
+                if(p1r == ntohl(p2buf[0]) && p1c == ntohl(p2buf[1])){
+                    clear();
+                    score = elapsed;
+                    while((direction = getch()) != 'q'){
+                        mvprintw(ROWS/2, COLS/5, "\nPlayer 1 caught Player 2\nScore: %d seconds\nPress 'q' to quit", score);
+                    }
+                    endwin(); // end ncurses
+                    return 0;
+                } else{
+                    printBoard(p1r, p1c, ntohl(p2buf[0]), ntohl(p2buf[1]), elapsed);
+                }
             }
-            endwin(); // end ncurses
         }
+        endwin();
     }
     return 0;
 }

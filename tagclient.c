@@ -18,9 +18,11 @@
 
 #include <ncurses.h>
 
+#include <time.h>
+
 #define PORT "3490" // the port client will be connecting to
 #define ROWS 20
-#define COLS 30
+#define COLS 50
 
 #define MAXDATASIZE 50 // max number of bytes we can get at once
 
@@ -79,8 +81,9 @@ int findListener(char *hostname){
     return sockfd;
 }
 
-void printBoard(int p1r, int p1c, int p2r, int p2c){
+void printBoard(int p1r, int p1c, int p2r, int p2c, int time){
     clear();
+    mvprintw(ROWS, 0, "time elapsed: %d", time);
     for(int r = 0; r < ROWS; r++){
         for(int c = 0; c < COLS; c++){
             if(r == 0 || r == ROWS -1 || c == 0 || c == COLS - 1){
@@ -103,8 +106,9 @@ int main(int argc, char *argv[]){
     u_int32_t p1buf[MAXDATASIZE];
     u_int32_t p2buf[2];
     int direction;
-    int p2r = 10;
-    int p2c = 10;
+    int p2r = ROWS-2;
+    int p2c = COLS-2;
+    int score;
 
     if(argc != 2){
         fprintf(stderr, "usage: client hostname\n");
@@ -116,6 +120,7 @@ int main(int argc, char *argv[]){
         printf("finding listener descriptor failed: %d", sockfd);
     }
 
+    time_t start_time = time(NULL);
     initscr();            // start ncurses
     cbreak();             // disable line buffering
     noecho();             // don't echo input
@@ -128,7 +133,7 @@ int main(int argc, char *argv[]){
     }
 
     printf("p1buf: %d, %d\n", ntohl(p1buf[0]), ntohl(p1buf[1]));
-    printBoard(ntohl(p1buf[0]), ntohl(p1buf[1]), p2r, p2c);
+    printBoard(ntohl(p1buf[0]), ntohl(p1buf[1]), p2r, p2c, 0);
 
     p2buf[0] = htonl(p2r);
     p2buf[1] = htonl(p2c);
@@ -138,13 +143,13 @@ int main(int argc, char *argv[]){
 
     while(1){
         direction = getch();
-        if(direction == KEY_UP && p2r-1 > 1){
+        if(direction == KEY_UP && p2r-1 > 0){
             p2r -= 1;
-        }else if(direction == KEY_DOWN && p2r+1 < ROWS-2){
+        }else if(direction == KEY_DOWN && p2r+1 < ROWS-1){
             p2r += 1;
-        }else if(direction == KEY_LEFT && p2c-1 > 1){
+        }else if(direction == KEY_LEFT && p2c-1 > 0){
             p2c -= 1;
-        }else if(direction == KEY_RIGHT && p2c+1 < COLS-2){
+        }else if(direction == KEY_RIGHT && p2c+1 < COLS-1){
             p2c += 1;
         }
 
@@ -176,7 +181,20 @@ int main(int argc, char *argv[]){
             }
         }
 
-        printBoard(ntohl(p1buf[0]), ntohl(p1buf[1]), p2r, p2c);
+        time_t now = time(NULL);
+        int elapsed = (int) difftime(now, start_time);
+
+        if(p2r == ntohl(p1buf[0]) && p2c == ntohl(p1buf[1])){
+            clear();
+            score = elapsed;
+            while((direction = getch()) != 'q'){
+                mvprintw(ROWS/2, COLS/5, "\nPlayer 1 caught Player 2\nScore: %d seconds\nPress 'q' to quit", score);
+            }
+            endwin(); // end ncurses
+            return 0;
+        } else{
+            printBoard(ntohl(p1buf[0]), ntohl(p1buf[1]), p2r, p2c, elapsed);
+        }
     }
     endwin();
     return 0;
